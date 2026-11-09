@@ -1,0 +1,51 @@
+# PC 本地部署配置（不入 git，含密码与代理，勿提交勿共享）
+# 用法：docker compose -f docker-compose.pc.yml up -d
+# 与上游 docker-compose.nas.yml 的区别：
+#   1. 端口 28080（本机 8080 被 ToolForge 占用，18080 也被占）
+#   2. 镜像用本地 commit 的 local-node（上游镜像 runtime 缺 Node.js，
+#      execjs 加载闲鱼加密算法必需。升级流程见 CLAUDE.md）
+#   3. 走宿主机代理（容器直连 passport.goofish.com TLS 被 RST，仅此域名；
+#      代理对国内域名是 direct，不会引起闲鱼海外 IP 风控）
+#   4. 管理员密码见下方 ADMIN_PASSWORD
+
+services:
+  xianyu-app:
+    image: xianyu-super-butler:local-node
+    container_name: xianyu-super-butler
+    restart: unless-stopped
+    ports:
+      - "28080:8080"
+    volumes:
+      - ./data:/app/data:rw
+      - ./logs:/app/logs:rw
+      - ./backups:/app/backups:rw
+      # 本地定制：免重复登录补丁（token 10年有效+落盘 data/session_tokens.json）。
+      # 升级镜像后需重打补丁：先 git diff 确认上游变更，再把本文件的定制段合入新版 reply_server.py
+      - ./app/reply_server.py:/app/app/reply_server.py:ro
+    environment:
+      TZ: Asia/Shanghai
+      DB_PATH: /app/data/xianyu_data.db
+      LOG_LEVEL: INFO
+
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: vRftAIDxUN6Dfuul  # 已失效（2026-08-26 在线改密，env 仅首次建库生效；此行仅留档）
+
+      AUTO_REPLY_ENABLED: "true"
+      AUTO_DELIVERY_ENABLED: "true"
+      AI_REPLY_ENABLED: "false"
+
+      HTTP_PROXY: http://host.docker.internal:10808
+      HTTPS_PROXY: http://host.docker.internal:10808
+      NO_PROXY: localhost,127.0.0.1
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    deploy:
+      resources:
+        limits:
+          memory: 3072M
+        reservations:
+          memory: 512M
