@@ -810,3 +810,11 @@ frontend/coverage/
 # Wrangler 本地缓存（Cloudflare Worker 部署产生）
 .wrangler/
 deploy/.wrangler/
+
+# AI 协作指令（本地部署文档，不入库）
+CLAUDE.md
+AGENTS.md
+
+# 各端专属部署配置（含密码/代理，严禁入库；NAS 端建 docker-compose.nas-local.yml 同理）
+docker-compose.pc.yml
+docker-compose.*-local.yml
