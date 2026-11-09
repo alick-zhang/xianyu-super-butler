@@ -17,6 +17,11 @@ start_xvfb() {
         return 1
     }
 
+    # 本地定制：清掉上次运行遗留的锁文件（docker restart 保留文件系统，/tmp 不清，
+    # 残留 .X99-lock 会让 Xvfb 报 "Server is already active" 起不来）
+    rm -f "/tmp/.X${DISPLAY_NUM}-lock" 2>/dev/null
+    rm -rf "/tmp/.X11-unix/X${DISPLAY_NUM}" 2>/dev/null
+
     Xvfb ":${DISPLAY_NUM}" -screen 0 "${SCREEN_SPEC}" -nolisten tcp -ac >/tmp/xvfb.log 2>&1 &
     xvfb_pid=$!
 
