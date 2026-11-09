@@ -4,14 +4,22 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     TZ=Asia/Shanghai \
     DOCKER_ENV=true \
-    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+    PLAYWRIGHT_DOWNLOAD_HOST=https://cdn.npmmirror.com/binaries/playwright
 
 WORKDIR /app
+
+# 本地定制：apt 换 aliyun 镜像（构建期容器不吃宿主机代理，官方源国内必炸）
+RUN set -eux; \
+    if [ -f /etc/apt/sources.list.d/debian.sources ]; then sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources; fi; \
+    if [ -f /etc/apt/sources.list ]; then sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list; fi
 
 FROM node:20-alpine AS frontend-builder
 
 WORKDIR /frontend
 COPY frontend/package.json frontend/package-lock.json ./
+# 本地定制：npm 换 npmmirror
+RUN npm config set registry https://registry.npmmirror.com
 RUN npm ci
 COPY frontend/ ./
 RUN VITE_OUT_DIR=dist npm run build

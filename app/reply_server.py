@@ -72,7 +72,34 @@ KEYWORDS_FILE = PROJECT_ROOT / "回复关键字.txt"
 ADMIN_USERNAME = "admin"
 DEFAULT_ADMIN_PASSWORD = "admin123"  # 系统初始化时的默认密码
 SESSION_TOKENS = {}  # 存储会话token: {token: {'user_id': int, 'username': str, 'timestamp': float}}
-TOKEN_EXPIRE_TIME = 24 * 60 * 60  # token过期时间：24小时
+TOKEN_EXPIRE_TIME = 10 * 365 * 24 * 60 * 60  # token过期时间：10年（本地定制：免重复登录）
+
+# ===== 本地定制：会话token持久化（容器重启不丢登录态）=====
+# 原实现 SESSION_TOKENS 是内存字典，容器一重启登录态全丢，必须重新登录。
+# 这里把 token 落盘到挂载卷 data/ 内，启动时自动恢复。
+SESSION_TOKENS_FILE = PROJECT_ROOT / "data" / "session_tokens.json"  # data/ 为 compose 挂载卷，容器重建也在
+
+def _save_session_tokens():
+    """把内存中的会话token落盘（登录/登出时调用）"""
+    try:
+        SESSION_TOKENS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        SESSION_TOKENS_FILE.write_text(json.dumps(SESSION_TOKENS), encoding='utf-8')
+    except Exception as e:
+        logger.warning(f"保存会话token失败: {e}")
+
+def _load_session_tokens():
+    """启动时从磁盘恢复未过期的会话token"""
+    try:
+        if SESSION_TOKENS_FILE.exists():
+            now = time.time()
+            for tok, info in json.loads(SESSION_TOKENS_FILE.read_text(encoding='utf-8')).items():
+                if now - info.get('timestamp', 0) <= TOKEN_EXPIRE_TIME:
+                    SESSION_TOKENS[tok] = info
+            logger.info(f"已恢复 {len(SESSION_TOKENS)} 个持久化会话token")
+    except Exception as e:
+        logger.warning(f"恢复会话token失败: {e}")
+
+_load_session_tokens()
 
 # 认证防刷（进程内状态，重启清零，与 SESSION_TOKENS 同一取舍）
 from app.services.auth_protection import email_code_send_limiter, login_failure_tracker
@@ -598,6 +625,7 @@ async def login(request: LoginRequest):
                     'is_admin': user.get('is_admin', False) or user['username'] == ADMIN_USERNAME,
                     'timestamp': time.time()
                 }
+                _save_session_tokens()
 
                 # 区分管理员和普通用户的日志
                 if user['username'] == ADMIN_USERNAME:
@@ -647,6 +675,7 @@ async def login(request: LoginRequest):
                 'is_admin': user.get('is_admin', False) or user['username'] == ADMIN_USERNAME,
                 'timestamp': time.time()
             }
+            _save_session_tokens()
 
             logger.info(f"【{user['username']}#{user['id']}】邮箱登录成功")
 
@@ -696,6 +725,7 @@ async def login(request: LoginRequest):
             'is_admin': user.get('is_admin', False) or user['username'] == ADMIN_USERNAME,
             'timestamp': time.time()
         }
+        _save_session_tokens()
 
         logger.info(f"【{user['username']}#{user['id']}】验证码登录成功")
 
@@ -733,6 +763,7 @@ async def verify(user_info: Optional[Dict[str, Any]] = Depends(verify_token)):
 async def logout(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
     if credentials and credentials.credentials in SESSION_TOKENS:
         del SESSION_TOKENS[credentials.credentials]
+        _save_session_tokens()
     return {"message": "已登出"}
 
 
